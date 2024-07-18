@@ -92,7 +92,7 @@ contract PuppyRaffle is ERC721, Ownable {
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
             }
         }
-        emit RaffleEnter(newPlayers);
+        emit RaffleEnter(newPlayers);    
     }
 
 
@@ -141,7 +141,7 @@ contract PuppyRaffle is ERC721, Ownable {
         uint256 winnerIndex =
             uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
         
-        console.log("[IC] winnerIndex:", winnerIndex);
+ 
         address winner = players[winnerIndex];
         uint256 totalAmountCollected = players.length * entranceFee;
         uint256 prizePool = (totalAmountCollected * 80) / 100;
@@ -152,7 +152,7 @@ contract PuppyRaffle is ERC721, Ownable {
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
-        console.log("RAR:", rarity);
+
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
         } else if (rarity <= COMMON_RARITY + RARE_RARITY) {
@@ -164,7 +164,7 @@ contract PuppyRaffle is ERC721, Ownable {
         delete players;
         raffleStartTime = block.timestamp;
         previousWinner = winner;
-        console.log("[IC] Prize is", prizePool);
+
         (bool success,) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
