@@ -86,8 +86,9 @@ contract PuppyRaffle is ERC721, Ownable {
         }
 
         // Check for duplicates
-        for (uint256 i = 0; i < players.length - 1; i++) {
-            for (uint256 j = i + 1; j < players.length; j++) {
+        uint256 playerLength = players.length;
+        for (uint256 i = 0; i < playerLength - 1; i++) {
+            for (uint256 j = i + 1; j < playerLength; j++) {
                 //console.log(players[i], players[j]);
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
             }
@@ -176,6 +177,7 @@ contract PuppyRaffle is ERC721, Ownable {
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
+        // slither-disable-next-line arbitrary-send-eth
         (bool success,) = feeAddress.call{value: feesToWithdraw}("");
         require(success, "PuppyRaffle: Failed to withdraw fees");
     }

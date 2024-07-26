@@ -1,5 +1,6 @@
 ### [C-1] Reentrancy in refund function
 
+
 **Description:** 
 Rafund function does not implement reentrancy protection. Attacker can invoke refund function from specialy crafted, malicous contract. When refund will send eth to this contract execution is passed to it while state of victim contract is not changed. That gives oportunity to invoke refound once again and receive another eth. Doing it until any eth is left in victim contract will drain all assets from it.
 
@@ -149,7 +150,7 @@ contract ReentrancyContract {
 Implement check interactions effect pattern or ReentrancyGuard mutex.
 
 
-### [H-2] Insecure randomnes
+### [C-2] Insecure randomnes
 
 **Description:** 
 The `PuppyRaffle` contract uses insecure randomness. A malicious user can predict how many addresses they need to add due to the randomness implementation based on block data, sender address, and internal array size. All these parameters can be under the attacker's control or they can know their values, making it possible to manipulate the contract state to always win the lottery.
@@ -181,7 +182,7 @@ It is worth mentioning that participants will always get the same item value for
 In some scenarios, conducting a successful attack may require a lot of assets. However, a malicious user can reclaim them by chaining this exploit with reentrancy, making the whole exploitation profitable. They will get the invested amount back, plus ETH stolen from other participants, plus the prize for winning the lottery and a Legendary NFT.
 
 **Impact:** 
-Critical - Malicous user can
+Critical 
 
 **Proof of Concept:** (Proof of Code)
 
@@ -348,7 +349,6 @@ Combine Multiple Sources: Use multiple sources of randomness to make it harder t
 ### [H-3] Overflow in calculating total fee
 
 **Description:** 
-### Corrected Description
 
 The variable `totalFees`, used for counting the amount of ETH to send as profit, is declared as `uint64`. Since this amount is counted in wei, it is possible to overflow this value. In the test case scenario, with an entrance fee of 1 ETH, the 20th account causes an overflow.
 
@@ -356,7 +356,7 @@ The variable `totalFees`, used for counting the amount of ETH to send as profit,
 **Impact:** 
 High
 
-**Proof of Concept:** (Proof of Code)
+**Proof of Concept:** 
 
 <details>
 <summary>PoC</summary>
@@ -409,11 +409,8 @@ function testOverflowSelecWinner() public {
 **Recommended Mitigation:** 
 Reconsider using `uint64` for storing data that may exceed its capacity. Use SafeMath or update the Solidity version to 0.8.0 or later, which has built-in overflow checks.
 
-    
 
-
-
-### [M-1] DoS attack in `PuppyRaffle::enterRafle'
+### [M-4] DoS attack in `PuppyRaffle::enterRafle'
 
 **Description:** 
 Protocol uses nested loop which sieze is under attacker control. Attacker can invoke function with large array to cause DoS while looping n^2 complex function increasing cost of entering to raffle. 
@@ -478,7 +475,7 @@ Every next entrance will be more expensive. If attacker  with add big array he w
 </details>
 
 
-### [M-#] Ambigous 0 value in function return
+### [M-5] Ambigous 0 value in function return
 
 **Description:** 
 If a player is at index 0 function will mislead user that he is not active because 0 is returned also for non-active users. 
@@ -497,8 +494,9 @@ If a player is at index 0 function will mislead user that he is not active becau
     }
 ```
 </details>
-**Impact:** 
-If user 
+**Impact:**
+Medium. 
+If user owns 0 index function getActivePlayer index will treat they as inective player as it retuns 0. 
 
 **Proof of Concept:** (Proof of Code)
 
@@ -566,36 +564,120 @@ Revert if player is not active.
 ```
 
 
+### [L-1] Solidity pragma should be specific, not wide
+
+Consider using a specific version of Solidity in your contracts instead of a wide version. For example, instead of `pragma solidity ^0.8.0;`, use `pragma solidity 0.8.0;`
+
+<details><summary>1 Found Instances</summary>
 
 
-# TEMPLATE
+- Found in src/PuppyRaffle.sol [Line: 2](src/PuppyRaffle.sol#L2)
 
-### [S-#] Private Data stored in storeage on chain HIGH (ROOT CAUSE + IMPACT)
+	```solidity
+	pragma solidity ^0.7.6;
+	```
 
-**Description:** 
-
-**Impact:** 
-High
-
-**Proof of Concept:** (Proof of Code)
-
-<details>
-<summary>PoC</summary>
-
-```javascript
-
-
-```
 </details>
 
-**Recommended Mitigation:** 
-Revert if player is not active.
-```javascript
 
-```
 
-```javascript
+### [L-2]  Missing checks for `address(0)` when assigning values to address state variables
+Check for `address(0)` when assigning values to address state variables.
 
-    
-```
+<details><summary>2 Found Instances</summary>
+
+
+- Found in src/PuppyRaffle.sol [Line: 63](src/PuppyRaffle.sol#L63)
+
+	```solidity
+	        feeAddress = _feeAddress;
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 189](src/PuppyRaffle.sol#L189)
+
+	```solidity
+	        feeAddress = newFeeAddress;
+	```
+
+</details>
+
+### [L-3]  Define and use `constant` variables instead of using literals
+
+If the same constant literal value is used multiple times, create a constant state variable and reference it throughout the contract.
+
+<details><summary>3 Found Instances</summary>
+
+
+- Found in src/PuppyRaffle.sol [Line: 148](src/PuppyRaffle.sol#L148)
+
+	```solidity
+	        uint256 prizePool = (totalAmountCollected * 80) / 100;
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 149](src/PuppyRaffle.sol#L149)
+
+	```solidity
+	        uint256 fee = (totalAmountCollected * 20) / 100;
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 155](src/PuppyRaffle.sol#L155)
+
+	```solidity
+	        uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
+	```
+
+</details>
+
+
+
+### [L-4]  Event is missing `indexed` fields
+
+Index event fields make the field more quickly accessible to off-chain tools that parse events. However, note that each index field costs extra gas during emission, so it's not necessarily best to index the maximum allowed per event (three fields). Each event should use three indexed fields if there are three or more fields, and gas usage is not particularly of concern for the events in question. If there are fewer than three fields, all of the fields should be indexed.
+
+<details><summary>3 Found Instances</summary>
+
+
+- Found in src/PuppyRaffle.sol [Line: 54](src/PuppyRaffle.sol#L54)
+
+	```solidity
+	    event RaffleEnter(address[] newPlayers);
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 55](src/PuppyRaffle.sol#L55)
+
+	```solidity
+	    event RaffleRefunded(address player);
+	```
+
+- Found in src/PuppyRaffle.sol [Line: 56](src/PuppyRaffle.sol#L56)
+
+	```solidity
+	    event FeeAddressChanged(address newFeeAddress);
+	```
+
+</details>
+
+
+
+### [L-5]  Loop contains `require`/`revert` statements
+
+Avoid `require` / `revert` statements in a loop because a single bad item can cause the whole transaction to fail. It's better to forgive on fail and return failed elements post processing of the loop
+
+<details><summary>1 Found Instances</summary>
+
+
+- Found in src/PuppyRaffle.sol [Line: 91](src/PuppyRaffle.sol#L91)
+
+	```solidity
+	            for (uint256 j = i + 1; j < playerLength; j++) {
+	```
+
+</details>
+
+
+
+
+
+
+
 
